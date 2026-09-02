@@ -65,7 +65,7 @@ struct LabView: View {
                 }
 
                 Section {
-                    Button("Purge caches") { model.resetLibrary() }
+                    Button("Purge caches") { model.purgeCaches() }
                 } footer: {
                     Text("Drops rendered images and decoded sources so the next scroll starts cold.")
                 }

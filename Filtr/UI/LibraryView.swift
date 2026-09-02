@@ -4,6 +4,7 @@ struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(MetricsStore.self) private var metrics
     @Environment(\.displayScale) private var displayScale
+
     @State private var selected: Photo?
     @State private var gridWidth: CGFloat = 0
 
@@ -24,10 +25,7 @@ struct LibraryView: View {
             // started a render at a nonsense size and then immediately restarted —
             // 96 wasted renders on every cold launch — and the unbounded height
             // proposal in that pass also defeated LazyVGrid's laziness, so all 96
-            // tiles were instantiated at once instead of the ~24 on screen.
-            //
-            // Measuring the ScrollView itself and holding the grid back until the
-            // width is real fixes both.
+            // tiles were instantiated at once instead of the ~18 on screen.
             ScrollView {
                 if side > 0 {
                     LazyVGrid(
@@ -35,21 +33,7 @@ struct LibraryView: View {
                         spacing: spacing
                     ) {
                         ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
-                            Button {
-                                selected = photo
-                            } label: {
-                                RenderedImageView(
-                                    photo: photo,
-                                    recipe: model.recipe(for: photo),
-                                    intensity: model.intensity,
-                                    targetPoints: side
-                                )
-                                .frame(width: side, height: side)
-                                .clipped()
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .onAppear { prefetchAhead(of: index) }
+                            tile(for: photo, index: index)
                         }
                     }
                     .padding(.bottom, 8)
@@ -61,10 +45,6 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             .background(.black)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                FilterStrip(selection: $model.globalRecipe)
-                    .onChange(of: model.globalRecipe) { model.overrides.removeAll() }
-            }
             .overlay(alignment: .topLeading) {
                 if model.showHUD {
                     HUDView()
@@ -80,11 +60,43 @@ struct LibraryView: View {
                 EditorView(photo: photo)
             }
             .sheet(isPresented: $model.showLab) {
-                LabView()
-                    .presentationDetents([.large])
+                LabView().presentationDetents([.large])
             }
+            .onChange(of: side) { model.gridTileSide = side }
         }
         .tint(.white)
+    }
+
+    /// The feed cell. Its render identity is the photo's *saved* edit, so committing an
+    /// edit in the editor is all it takes for this to re-render — there is no
+    /// invalidation call, no notification, and no image being pushed in from outside.
+    private func tile(for photo: Photo, index: Int) -> some View {
+        Button {
+            selected = photo
+        } label: {
+            RenderedImageView(
+                photo: photo,
+                recipe: model.recipe(for: photo),
+                intensity: model.edit(for: photo).intensity,
+                targetPoints: side
+            )
+            .frame(width: side, height: side)
+            .clipped()
+            .overlay(alignment: .bottomLeading) {
+                if model.isEdited(photo) {
+                    Text(model.edit(for: photo).recipeID)
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 2))
+                        .padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear { prefetchAhead(of: index) }
     }
 
     /// Warm a short runway of tiles below the fold.
@@ -93,19 +105,20 @@ struct LibraryView: View {
     /// scrolls into view its render is usually already in flight, and the visible
     /// request joins that job instead of starting a second identical one.
     ///
-    /// Deliberately short. Lookahead is a bet, and every prefetched render competes
-    /// for the same permits as the tile the user is looking at — which is exactly why
-    /// prefetch goes in the semaphore's background lane and gets `.utility`.
+    /// Deliberately short. Lookahead is a bet, and every prefetched render competes for
+    /// the same permits as the tile the user is looking at — which is why prefetch goes
+    /// in the semaphore's background lane and gets `.utility`.
     private func prefetchAhead(of index: Int) {
         let start = index + 1
         let end = min(start + 6, model.photos.count)
         guard start < end, side > 0 else { return }
 
         let keys = model.photos[start..<end].map { photo in
-            RenderCoordinator.Key(
+            let edit = model.edit(for: photo)
+            return RenderCoordinator.Key(
                 photo: photo,
-                recipe: model.recipe(for: photo),
-                intensity: model.intensity,
+                recipe: edit.recipe,
+                intensity: edit.intensity,
                 maxPixel: side * displayScale,
                 workMultiplier: model.config.workMultiplier
             )
@@ -125,21 +138,16 @@ struct LibraryView: View {
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
-            // The stress test: 96 tiles change render identity in one frame.
-            Button {
-                model.restyleAll()
+            // Bulk edits — and the stress test. 96 saved edits change in one frame.
+            Menu {
+                Button("Restyle all (one preset)") { model.restyleAll() }
+                Button("Scramble (all different)") { model.scramble() }
+                Divider()
+                Button("Revert all to original", role: .destructive) { model.revertAll() }
             } label: {
                 Image(systemName: "wand.and.stars")
             }
-            .accessibilityLabel("Restyle all")
-
-            // Same load, but every key is unique — nothing can be coalesced.
-            Button {
-                model.scramble()
-            } label: {
-                Image(systemName: "shuffle")
-            }
-            .accessibilityLabel("Scramble")
+            .accessibilityLabel("Bulk edit")
 
             Button {
                 model.showLab = true
