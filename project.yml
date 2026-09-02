@@ -1,0 +1,33 @@
+name: Filtr
+options:
+  bundleIdPrefix: com.timothybrandt
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+targets:
+  Filtr:
+    type: application
+    platform: iOS
+    sources:
+      - path: Filtr
+    info:
+      path: Filtr/Info.plist
+      properties:
+        CFBundleDisplayName: Filtr
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - armv7
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.timothybrandt.filtr
+        GENERATE_INFOPLIST_FILE: "NO"
+        TARGETED_DEVICE_FAMILY: "1"

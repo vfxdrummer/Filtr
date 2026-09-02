@@ -17,6 +17,7 @@ struct RenderedImageView<Placeholder: View>: View {
     let photo: Photo
     let recipe: FilterRecipe
     let intensity: Double
+    var adjustments: Adjustments = .neutral
     let targetPoints: CGFloat
     var priority: TaskPriority = .userInitiated
     @ViewBuilder var placeholder: () -> Placeholder
@@ -31,6 +32,7 @@ struct RenderedImageView<Placeholder: View>: View {
         let photoID: Int
         let recipeID: String
         let intensityBucket: Int
+        let adjustments: Adjustments
         let points: Int
         let work: Int
         let downsample: Bool
@@ -41,6 +43,7 @@ struct RenderedImageView<Placeholder: View>: View {
             photoID: photo.id,
             recipeID: recipe.id,
             intensityBucket: Int((intensity * 20).rounded()),
+            adjustments: adjustments.quantized(),
             points: Int(targetPoints.rounded()),
             work: model.config.workMultiplier,
             downsample: model.config.downsampleSources
@@ -75,6 +78,7 @@ struct RenderedImageView<Placeholder: View>: View {
             photo: photo,
             recipe: recipe,
             intensity: intensity,
+            adjustments: adjustments,
             maxPixel: targetPoints * displayScale,
             workMultiplier: model.config.workMultiplier
         )
@@ -95,8 +99,15 @@ struct RenderedImageView<Placeholder: View>: View {
 }
 
 extension RenderedImageView where Placeholder == TilePlaceholder {
-    init(photo: Photo, recipe: FilterRecipe, intensity: Double, targetPoints: CGFloat, priority: TaskPriority = .userInitiated) {
-        self.init(photo: photo, recipe: recipe, intensity: intensity,
+    init(
+        photo: Photo,
+        recipe: FilterRecipe,
+        intensity: Double,
+        adjustments: Adjustments = .neutral,
+        targetPoints: CGFloat,
+        priority: TaskPriority = .userInitiated
+    ) {
+        self.init(photo: photo, recipe: recipe, intensity: intensity, adjustments: adjustments,
                   targetPoints: targetPoints, priority: priority) {
             TilePlaceholder(seed: photo.id)
         }

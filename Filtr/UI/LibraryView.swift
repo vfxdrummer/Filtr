@@ -78,13 +78,14 @@ struct LibraryView: View {
                 photo: photo,
                 recipe: model.recipe(for: photo),
                 intensity: model.edit(for: photo).intensity,
+                adjustments: model.edit(for: photo).adjustments,
                 targetPoints: side
             )
             .frame(width: side, height: side)
             .clipped()
             .overlay(alignment: .bottomLeading) {
                 if model.isEdited(photo) {
-                    Text(model.edit(for: photo).recipeID)
+                    Text(model.edit(for: photo).badge)
                         .font(.system(size: 8, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.9))
                         .padding(.horizontal, 4)
@@ -119,6 +120,7 @@ struct LibraryView: View {
                 photo: photo,
                 recipe: edit.recipe,
                 intensity: edit.intensity,
+                adjustments: edit.adjustments,
                 maxPixel: side * displayScale,
                 workMultiplier: model.config.workMultiplier
             )

@@ -24,6 +24,7 @@ struct FilterStrip: View {
     @Binding var selection: FilterRecipe
     var previewPhoto: Photo?
     var intensity: Double = 1
+    var adjustments: Adjustments = .neutral
 
     private let thumb: CGFloat = 56
 
@@ -41,6 +42,7 @@ struct FilterStrip: View {
                                         photo: previewPhoto,
                                         recipe: recipe,
                                         intensity: intensity,
+                                        adjustments: adjustments,
                                         targetPoints: thumb,
                                         priority: .userInitiated
                                     )

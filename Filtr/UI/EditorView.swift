@@ -14,6 +14,9 @@ struct EditorView: View {
     @State private var isSaving = false
     @State private var confirmDiscard = false
     @State private var exportState: ExportState = .idle
+    @State private var tab: Tab = .filters
+
+    enum Tab: String { case filters, adjust }
 
     private var isDirty: Bool { draft != saved }
 
@@ -32,6 +35,7 @@ struct EditorView: View {
                     photo: photo,
                     recipe: draft.recipe,
                     intensity: draft.intensity,
+                    adjustments: draft.adjustments,
                     targetPoints: side
                 )
                 .frame(width: side, height: side)
@@ -48,27 +52,43 @@ struct EditorView: View {
                     }
                 }
 
-                intensityRow
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
+                // Intensity is the strength of the *preset*, so it lives with the
+                // preset tab. The Adjust tray brings its own slider.
+                if tab == .filters {
+                    intensityRow
+                        .padding(.horizontal, 18)
+                        .padding(.top, 16)
+                }
 
                 exportRow
                     .padding(.horizontal, 18)
-                    .padding(.top, 16)
+                    .padding(.top, 14)
 
                 Spacer(minLength: 0)
             }
         }
         .background(.black)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            FilterStrip(
-                selection: Binding(
-                    get: { draft.recipe },
-                    set: { draft.recipeID = $0.id }
-                ),
-                previewPhoto: photo,
-                intensity: draft.intensity
-            )
+            VStack(spacing: 0) {
+                switch tab {
+                case .filters:
+                    FilterStrip(
+                        selection: Binding(
+                            get: { draft.recipe },
+                            set: { draft.recipeID = $0.id }
+                        ),
+                        previewPhoto: photo,
+                        intensity: draft.intensity,
+                        adjustments: draft.adjustments
+                    )
+                case .adjust:
+                    AdjustTray(adjustments: Binding(
+                        get: { draft.adjustments },
+                        set: { draft.adjustments = $0 }
+                    ))
+                }
+                tabBar
+            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle(photo.title)
@@ -87,6 +107,39 @@ struct EditorView: View {
             Text("Your edits to \(photo.title) won't be saved.")
         }
         .interactiveDismissDisabled(isDirty)
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(.filters, label: "FILTERS", badge: draft.hasPreset ? draft.recipeID : nil)
+            tabButton(.adjust, label: "EDIT",
+                      badge: draft.adjustments.activeCount > 0 ? "\(draft.adjustments.activeCount)" : nil)
+        }
+        .background(.black)
+        .overlay(alignment: .top) { Divider().overlay(Color(white: 0.16)) }
+    }
+
+    private func tabButton(_ value: Tab, label: String, badge: String?) -> some View {
+        Button {
+            tab = value
+        } label: {
+            HStack(spacing: 5) {
+                Text(label)
+                    .font(.system(size: 11, weight: tab == value ? .semibold : .regular, design: .monospaced))
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color(white: 0.22), in: Capsule())
+                }
+            }
+            .foregroundStyle(tab == value ? .white : Color(white: 0.45))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ToolbarContentBuilder
@@ -142,6 +195,7 @@ struct EditorView: View {
                 photo: photo,
                 recipe: committed.recipe,
                 intensity: committed.intensity,
+                adjustments: committed.adjustments,
                 maxPixel: model.gridTileSide * displayScale,
                 workMultiplier: model.config.workMultiplier
             )
@@ -171,8 +225,8 @@ struct EditorView: View {
             Slider(value: Binding(get: { draft.intensity }, set: { draft.intensity = $0 }), in: 0...1)
                 .tint(.white)
         }
-        .disabled(draft.isIdentity)
-        .opacity(draft.isIdentity ? 0.35 : 1)
+        .disabled(!draft.hasPreset)
+        .opacity(draft.hasPreset ? 1 : 0.35)
     }
 
     private var exportRow: some View {
@@ -217,6 +271,7 @@ struct EditorView: View {
             photo: photo,
             recipe: draft.recipe,
             intensity: draft.intensity,
+            adjustments: draft.adjustments,
             maxPixel: maxPixel,
             workMultiplier: model.config.workMultiplier
         )

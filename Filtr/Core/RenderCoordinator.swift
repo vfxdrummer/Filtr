@@ -24,10 +24,18 @@ actor RenderCoordinator {
         let cropSeed: Int
         let recipeID: String
         let intensityBucket: Int
+        let adjustments: Adjustments
         let maxPixel: Int
         let workMultiplier: Int
 
-        init(photo: Photo, recipe: FilterRecipe, intensity: Double, maxPixel: CGFloat, workMultiplier: Int) {
+        init(
+            photo: Photo,
+            recipe: FilterRecipe,
+            intensity: Double,
+            adjustments: Adjustments = .neutral,
+            maxPixel: CGFloat,
+            workMultiplier: Int
+        ) {
             self.photoID = photo.id
             self.sourceName = photo.sourceName
             self.cropSeed = photo.cropSeed
@@ -35,6 +43,9 @@ actor RenderCoordinator {
             // Bucket the slider. A continuous Double as a cache key means every
             // pixel of drag is a brand new render that can never be reused.
             self.intensityBucket = Int((intensity * 20).rounded())
+            // Same reason as the intensity bucket: a raw Double from a slider drag
+            // would make every key unique and the cache useless.
+            self.adjustments = adjustments.quantized()
             self.maxPixel = Int((maxPixel / 32).rounded(.up)) * 32
             self.workMultiplier = workMultiplier
         }
@@ -48,7 +59,7 @@ actor RenderCoordinator {
         var sourceMaxPixel: CGFloat { CGFloat(maxPixel) * 1.8 }
 
         var cacheKey: NSString {
-            "\(photoID)|\(recipeID)|\(intensityBucket)|\(maxPixel)|\(workMultiplier)" as NSString
+            "\(photoID)|\(recipeID)|\(intensityBucket)|\(adjustments.keyFragment)|\(maxPixel)|\(workMultiplier)" as NSString
         }
     }
 
@@ -245,6 +256,7 @@ actor RenderCoordinator {
             let request = FilterEngine.Request(
                 recipe: FilterRecipe.recipe(id: key.recipeID),
                 intensity: key.intensity,
+                adjustments: key.adjustments,
                 normalizedCrop: key.normalizedCrop,
                 targetMaxPixel: CGFloat(key.maxPixel),
                 workMultiplier: config.workMultiplier
