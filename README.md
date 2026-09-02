@@ -150,6 +150,43 @@ decode **116 MB instead of 20 MB**.
 
 ---
 
+## Tests
+
+```bash
+xcodebuild -project Filtr.xcodeproj -scheme Filtr \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+```
+
+39 tests, ~3 seconds, no photographs required. The point of them is that the claims
+this README makes are *checkable*.
+
+The design change that made it possible was extracting `PixelRenderer` — the seam
+between the coordinator's **policy** (admission, coalescing, cancellation, caching) and
+the **mechanism** that burns GPU time. Tests inject a `FakeRenderer` that counts its own
+invocations, tracks peak simultaneous calls, and parks until released. That turns
+timing-dependent guarantees into deterministic assertions.
+
+What's actually pinned down:
+
+| Suite | Guards against |
+|---|---|
+| Render coordinator | Eight identical requests doing eight renders. A tile scrolling away cancelling work its neighbours still need. Fan-out exceeding the permit budget. Cache and coalescing silently not working — *and* silently not turning off. |
+| Async semaphore | A waiter cancelled while parked swallowing its permit, so the pipeline slowly loses capacity and stalls with nothing running. Prefetch overtaking the tile the user is looking at. |
+| Render key | A continuous slider `Double` reaching the cache key and making every drag frame uncacheable. Two different edits colliding on one key — the bug that would put the wrong photo in the feed. |
+| Edit persistence | A file written before a tool existed failing to decode. A corrupt file crashing at launch. "No file yet" being confused with "the user deleted everything". |
+| Filter engine | The grain regression (blown-out speckle from `CIRandomGenerator`'s premultiplied RGB) and the infinite-extent regression (`CIVignette` geometry breaking after a biased colour matrix), both asserted numerically. |
+
+Two notes on how they're written. Rendering tests run against **flat mid-grey**, so any
+deviation from 0.5 is something the filter did rather than something the photograph
+already had — that's what lets the grain test assert "symmetric noise that never clips"
+instead of eyeballing a screenshot. And the harness is **sRGB end to end**: the first
+version tagged its synthetic source `DeviceRGB`, picked up a gamma conversion through
+the sRGB `CIContext`, and reported flat 0.5 grey coming back as 0.57 — three tests
+failing because the harness was measuring a colour-space conversion rather than the
+filter.
+
+---
+
 ## Code map
 
 | File | Role |
@@ -158,6 +195,7 @@ decode **116 MB instead of 20 MB**.
 | `Core/AsyncSemaphore.swift` | Awaitable counting semaphore, two priority lanes, cancellation-safe. |
 | `Core/RenderTaskExecutor.swift` | `TaskExecutor` over a concurrent queue, for the blocking Core Image call. |
 | `Core/FilterEngine.swift` | Shared `CIContext`, the preset chain, and the Adjust chain. Deliberately not an actor. |
+| `Core/PixelRenderer.swift` | The policy/mechanism seam. Production impl decodes + runs the chain. |
 | `Core/EditStore.swift` | The document on disk: versioned JSON, atomic writes. |
 | `Core/Adjustments.swift` | The twelve tools as plain values — `Hashable`, so they're half the cache key. |
 | `UI/EditorView.swift` | The edit session: draft state, dirty tracking, Save / Discard. |

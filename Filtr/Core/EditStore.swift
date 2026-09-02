@@ -22,19 +22,26 @@ actor EditStore {
 
     private static let currentVersion = 1
 
-    private let url: URL = {
+    private let url: URL
+
+    init(url: URL? = nil) {
+        self.url = url ?? Self.defaultURL
+    }
+
+    /// Injectable so tests write to a temporary directory instead of the real container.
+    static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Filtr", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("edits.json")
-    }()
+    }
 
     var fileURL: URL { url }
 
     /// Synchronous on purpose — see `AppModel.init`.
-    nonisolated static func loadSync() -> [Int: Edit]? {
-        let store = EditStore()
-        guard let data = try? Data(contentsOf: store.url) else { return nil }
+    nonisolated static func loadSync(from url: URL? = nil) -> [Int: Edit]? {
+        let target = url ?? defaultURL
+        guard let data = try? Data(contentsOf: target) else { return nil }
         guard let document = try? JSONDecoder().decode(Document.self, from: data) else {
             // Corrupt or from a future build: start clean rather than crash on launch.
             return [:]

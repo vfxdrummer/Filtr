@@ -16,6 +16,21 @@ import Foundation
 actor RenderCoordinator {
     static let shared = RenderCoordinator()
 
+    /// The step that actually produces pixels.
+    ///
+    /// The coordinator's job is *policy* — who gets admitted, what gets shared, what
+    /// gets thrown away. Core Image is the *mechanism*. Splitting them means the policy
+    /// can be tested deterministically (a fake renderer that blocks on command and
+    /// counts its own invocations) instead of by rendering real photographs and hoping
+    /// the timing works out.
+    private let renderer: any PixelRenderer
+
+    init(renderer: any PixelRenderer = CoreImageRenderer(), config: PipelineConfig = PipelineConfig()) {
+        self.renderer = renderer
+        self.config = config
+        self.semaphore = AsyncSemaphore(permits: config.maxConcurrentRenders)
+    }
+
     // MARK: - Key
 
     struct Key: Hashable, Sendable {
@@ -85,8 +100,8 @@ actor RenderCoordinator {
     }()
 
     private var inFlight: [Key: Job] = [:]
-    private var config = PipelineConfig()
-    private var semaphore = AsyncSemaphore(permits: PipelineConfig().maxConcurrentRenders)
+    private var config: PipelineConfig
+    private var semaphore: AsyncSemaphore
 
     // MARK: - Configuration
 
@@ -169,13 +184,16 @@ actor RenderCoordinator {
         let effectivePriority = config.usePriorityHints ? priority : .medium
         let config = self.config
         let semaphore = self.semaphore
+        let renderer = self.renderer
 
         // `Task.detached`, not `Task {}`. An unstructured `Task` created inside an actor
         // inherits that actor's isolation, which would run every render *on the
         // coordinator* and serialise the whole pipeline behind its single executor.
         let lane: AsyncSemaphore.Lane = priority <= .utility ? .background : .interactive
         let task = Task<ImageBox, any Error>.detached(priority: effectivePriority) {
-            try await RenderCoordinator.execute(key: key, config: config, semaphore: semaphore, lane: lane)
+            try await RenderCoordinator.execute(
+                key: key, config: config, semaphore: semaphore, lane: lane, renderer: renderer
+            )
         }
 
         let job = Job(task: task)
@@ -212,7 +230,8 @@ actor RenderCoordinator {
         key: Key,
         config: PipelineConfig,
         semaphore: AsyncSemaphore,
-        lane: AsyncSemaphore.Lane
+        lane: AsyncSemaphore.Lane,
+        renderer: any PixelRenderer
     ) async throws -> ImageBox {
 
         func checkpoint() throws {
@@ -238,53 +257,10 @@ actor RenderCoordinator {
             if holdsPermit { Task { await semaphore.signal() } }
         }
 
-        var didBeginRender = false
         do {
             try checkpoint()
-
-            let source = try await SourceImageLoader.shared.image(
-                named: key.sourceName,
-                maxPixel: key.sourceMaxPixel,
-                downsample: config.downsampleSources,
-                useCache: config.useCache
-            )
-
-            // Second checkpoint. Decoding a 24 MB JPEG is slow enough that the tile
-            // asking for it is often gone by the time we get here.
-            try checkpoint()
-
-            let request = FilterEngine.Request(
-                recipe: FilterRecipe.recipe(id: key.recipeID),
-                intensity: key.intensity,
-                adjustments: key.adjustments,
-                normalizedCrop: key.normalizedCrop,
-                targetMaxPixel: CGFloat(key.maxPixel),
-                workMultiplier: config.workMultiplier
-            )
-
-            MetricsRecorder.shared.renderBegan()
-            didBeginRender = true
-            let started = CFAbsoluteTimeGetCurrent()
-
-            let output: ImageBox
-            if config.renderOnMainThread {
-                output = try await MainActor.run {
-                    try FilterEngine.shared.render(source, request: request)
-                }
-            } else {
-                // Hand the synchronous Core Image work to a queue that is allowed to
-                // block, so we never tie up a cooperative-pool thread with it.
-                output = try await withTaskExecutorPreference(RenderTaskExecutor.shared) {
-                    try checkpoint()
-                    return try FilterEngine.shared.render(source, request: request)
-                }
-            }
-
-            MetricsRecorder.shared.renderEnded(millis: (CFAbsoluteTimeGetCurrent() - started) * 1000)
-            didBeginRender = false
-            return output
+            return try await renderer.makeImage(for: key, config: config)
         } catch {
-            MetricsRecorder.shared.renderCancelled(wasRunning: didBeginRender)
             throw error
         }
     }

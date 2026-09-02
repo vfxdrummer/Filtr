@@ -25,7 +25,17 @@ struct Adjustments: Hashable, Sendable, Codable {
 
     static let neutral = Adjustments()
 
-    init() {}
+    init(
+        exposure: Double = 0, contrast: Double = 0, saturation: Double = 0,
+        temperature: Double = 0, tint: Double = 0, highlights: Double = 0,
+        shadows: Double = 0, clarity: Double = 0, sharpen: Double = 0,
+        fade: Double = 0, grain: Double = 0, vignette: Double = 0
+    ) {
+        self.exposure = exposure; self.contrast = contrast; self.saturation = saturation
+        self.temperature = temperature; self.tint = tint; self.highlights = highlights
+        self.shadows = shadows; self.clarity = clarity; self.sharpen = sharpen
+        self.fade = fade; self.grain = grain; self.vignette = vignette
+    }
 
     /// Hand-written so a file saved by an older build — or by a newer one with tools
     /// this build doesn't know about — still decodes. Swift's synthesised `Decodable`

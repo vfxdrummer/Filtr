@@ -31,3 +31,30 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.timothybrandt.filtr
         GENERATE_INFOPLIST_FILE: "NO"
         TARGETED_DEVICE_FAMILY: "1"
+
+  FiltrTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FiltrTests
+    dependencies:
+      - target: Filtr
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.timothybrandt.filtr.tests
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  Filtr:
+    build:
+      targets:
+        Filtr: all
+        FiltrTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - FiltrTests
