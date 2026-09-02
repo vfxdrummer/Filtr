@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(AppModel.self) private var model
     @Environment(MetricsStore.self) private var metrics
+    @Environment(\.displayScale) private var displayScale
     @State private var selected: Photo?
     @State private var gridWidth: CGFloat = 0
 
@@ -33,7 +34,7 @@ struct LibraryView: View {
                         columns: Array(repeating: GridItem(.fixed(side), spacing: spacing), count: columns),
                         spacing: spacing
                     ) {
-                        ForEach(model.photos) { photo in
+                        ForEach(Array(model.photos.enumerated()), id: \.element.id) { index, photo in
                             Button {
                                 selected = photo
                             } label: {
@@ -48,6 +49,7 @@ struct LibraryView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .onAppear { prefetchAhead(of: index) }
                         }
                     }
                     .padding(.bottom, 8)
@@ -83,6 +85,32 @@ struct LibraryView: View {
             }
         }
         .tint(.white)
+    }
+
+    /// Warm a short runway of tiles below the fold.
+    ///
+    /// This is where request coalescing earns its place: by the time a prefetched tile
+    /// scrolls into view its render is usually already in flight, and the visible
+    /// request joins that job instead of starting a second identical one.
+    ///
+    /// Deliberately short. Lookahead is a bet, and every prefetched render competes
+    /// for the same permits as the tile the user is looking at — which is exactly why
+    /// prefetch goes in the semaphore's background lane and gets `.utility`.
+    private func prefetchAhead(of index: Int) {
+        let start = index + 1
+        let end = min(start + 6, model.photos.count)
+        guard start < end, side > 0 else { return }
+
+        let keys = model.photos[start..<end].map { photo in
+            RenderCoordinator.Key(
+                photo: photo,
+                recipe: model.recipe(for: photo),
+                intensity: model.intensity,
+                maxPixel: side * displayScale,
+                workMultiplier: model.config.workMultiplier
+            )
+        }
+        Task { await RenderCoordinator.shared.prefetch(keys) }
     }
 
     @ToolbarContentBuilder

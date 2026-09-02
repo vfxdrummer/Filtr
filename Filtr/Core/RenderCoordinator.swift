@@ -162,8 +162,9 @@ actor RenderCoordinator {
         // `Task.detached`, not `Task {}`. An unstructured `Task` created inside an actor
         // inherits that actor's isolation, which would run every render *on the
         // coordinator* and serialise the whole pipeline behind its single executor.
+        let lane: AsyncSemaphore.Lane = priority <= .utility ? .background : .interactive
         let task = Task<ImageBox, any Error>.detached(priority: effectivePriority) {
-            try await RenderCoordinator.execute(key: key, config: config, semaphore: semaphore)
+            try await RenderCoordinator.execute(key: key, config: config, semaphore: semaphore, lane: lane)
         }
 
         let job = Job(task: task)
@@ -199,7 +200,8 @@ actor RenderCoordinator {
     private nonisolated static func execute(
         key: Key,
         config: PipelineConfig,
-        semaphore: AsyncSemaphore
+        semaphore: AsyncSemaphore,
+        lane: AsyncSemaphore.Lane
     ) async throws -> ImageBox {
 
         func checkpoint() throws {
@@ -212,7 +214,7 @@ actor RenderCoordinator {
         if config.boundConcurrency {
             MetricsRecorder.shared.enteredQueue()
             do {
-                try await semaphore.wait()
+                try await semaphore.wait(lane: lane)
             } catch {
                 MetricsRecorder.shared.leftQueue()
                 MetricsRecorder.shared.renderCancelled(wasRunning: false)
@@ -232,7 +234,8 @@ actor RenderCoordinator {
             let source = try await SourceImageLoader.shared.image(
                 named: key.sourceName,
                 maxPixel: key.sourceMaxPixel,
-                downsample: config.downsampleSources
+                downsample: config.downsampleSources,
+                useCache: config.useCache
             )
 
             // Second checkpoint. Decoding a 24 MB JPEG is slow enough that the tile

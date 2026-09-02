@@ -21,13 +21,13 @@ actor SourceImageLoader {
 
     enum LoadError: Error { case missingFile(String), decodeFailed(String) }
 
-    func image(named name: String, maxPixel: CGFloat, downsample: Bool) async throws -> ImageBox {
+    func image(named name: String, maxPixel: CGFloat, downsample: Bool, useCache: Bool) async throws -> ImageBox {
         // Bucket to 256pt steps. Without this, every slightly different tile size
         // mints a new cache entry and the cache stops being a cache.
         let bucket = downsample ? Int((maxPixel / 256).rounded(.up)) * 256 : 0
         let key = Key(name: name, maxPixel: bucket)
 
-        if let hit = decoded[key] { return hit }
+        if useCache, let hit = decoded[key] { return hit }
 
         // Decode coalescing: two tiles backed by the same file don't both hit the disk.
         if let existing = inFlight[key] { return try await existing.value }
@@ -39,7 +39,7 @@ actor SourceImageLoader {
         defer { inFlight[key] = nil }
 
         let box = try await task.value
-        store(box, for: key)
+        if useCache { store(box, for: key) }
         return box
     }
 
